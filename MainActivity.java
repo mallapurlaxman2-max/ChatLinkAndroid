@@ -235,17 +235,25 @@ public class MainActivity extends Activity {
             addSystemMessage("Connect first. Tap Host chat on one phone or Join chat on the other.");
             return;
         }
-        try {
-            writer.println(message.replace("\n", " "));
-            if (writer.checkError()) throw new IOException("Could not send message");
-            addBubble("YOU", message, true);
-            messageInput.setText("");
-            ((InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE))
-                    .hideSoftInputFromWindow(messageInput.getWindowToken(), 0);
-        } catch (Exception e) {
-            addSystemMessage("Send failed: " + e.getMessage());
-            disconnect(false);
-        }
+
+        // Run network transmission in a background thread to prevent NetworkOnMainThreadException
+        new Thread(() -> {
+            try {
+                writer.println(message.replace("\n", " "));
+                if (writer.checkError()) throw new IOException("Could not send message");
+                runOnUiThread(() -> {
+                    addBubble("YOU", message, true);
+                    messageInput.setText("");
+                    ((InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE))
+                            .hideSoftInputFromWindow(messageInput.getWindowToken(), 0);
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    addSystemMessage("Send failed: " + e.getMessage());
+                    disconnect(false);
+                });
+            }
+        }).start();
     }
 
     private void closeNetwork() {
@@ -261,11 +269,14 @@ public class MainActivity extends Activity {
 
     private void disconnect(boolean tellPeer) {
         running = false;
-        try {
-            if (tellPeer && writer != null) writer.println("/__CHATLINK_EXIT__");
-        } catch (Exception ignored) {}
-        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
-        try { if (serverSocket != null) serverSocket.close(); } catch (Exception ignored) {}
+        new Thread(() -> {
+            try {
+                if (tellPeer && writer != null) writer.println("/__CHATLINK_EXIT__");
+            } catch (Exception ignored) {}
+            try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+            try { if (serverSocket != null) serverSocket.close(); } catch (Exception ignored) {}
+        }).start();
+
         addSystemMessage("Disconnected.");
         setStatus("Not connected", "#64748b");
         hostButton.setEnabled(true);
@@ -280,5 +291,4 @@ public class MainActivity extends Activity {
         disconnect(true);
         super.onDestroy();
     }
-
 }
